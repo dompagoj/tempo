@@ -5,7 +5,7 @@ mod start;
 mod rm_cmd;
 mod status;
 
-use crate::config::*;
+use crate::data::*;
 use clap::{command, Args, Parser, Subcommand};
 use colored::Colorize;
 

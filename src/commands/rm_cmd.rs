@@ -23,6 +23,9 @@ pub enum RmCommandAction {
 pub struct AllArgs {
     #[arg(short, long)]
     force: bool,
+
+    #[arg(long)]
+    delete_file: bool,
 }
 
 impl Display for RmCommandAction {
@@ -40,7 +43,14 @@ pub fn command(config: ConfigRef, args: RmCommand) {
 
     if let RmCommandAction::Unknown = action {
         use RmCommandAction::*;
-        let options = vec![Current, Archived, All(AllArgs { force: false })];
+        let options = vec![
+            Current,
+            Archived,
+            All(AllArgs {
+                force: false,
+                delete_file: false,
+            }),
+        ];
         action = inquire::Select::new("What to delete", options)
             .prompt()
             .unwrap_or(RmCommandAction::Unknown);
@@ -63,9 +73,19 @@ pub fn command(config: ConfigRef, args: RmCommand) {
             };
 
             if let Some(true) = result {
-                println!("{}", "Deleted all data!".bright_red());
-                if let Err(err) = config.delete_file() {
-                    eprintln!("Failed to delete file {:?}", err);
+                match args.delete_file {
+                    true => {
+                        if let Err(err) = config.delete_file() {
+                            eprintln!("Failed to delete file {:?}", err);
+                        } else {
+                            println!("{}", "Deleted the data file".bright_red());
+                        }
+                    }
+                    false => {
+                        println!("{}", "Deleted all data!".bright_red());
+                        config.current.clear();
+                        config.entries.clear();
+                    }
                 }
             } else {
                 println!("Aborting...");

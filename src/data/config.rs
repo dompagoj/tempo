@@ -1,9 +1,4 @@
-use bytecheck::CheckBytes;
-use rkyv::{Archive, Deserialize, Serialize};
-use std::fs::*;
-use std::io::{Read, Write};
-use std::ops::{Deref, DerefMut};
-use std::path::*;
+use super::*;
 
 #[derive(Archive, Deserialize, Serialize, Debug, Default, Clone)]
 #[archive(compare(PartialEq))]
@@ -22,12 +17,6 @@ pub struct ConfigFileInner {
     pub current: Vec<TimeEntry>,
 }
 
-#[derive(Archive, Deserialize, Serialize, Debug, Default)]
-#[archive_attr(derive(CheckBytes, Debug))]
-pub struct UserData {
-    id: i32
-}
-
 #[derive(Debug)]
 pub struct ConfigFile {
     config: ConfigFileInner,
@@ -38,15 +27,10 @@ pub struct ConfigFile {
 }
 
 impl ConfigFile {
-    pub fn add_done_entry(&mut self, mut entry: TimeEntry) {
-        entry.end_time = Some(chrono::Local::now().to_string());
-        self.entries.push(entry);
-    }
-
     pub fn get_new() -> Self {
         let path = get_config_file_path();
         let (config, config_file) = get_config_file(&path);
-        let user_data = get_user_data(&path);
+        let user_data = UserData::default();
 
         ConfigFile {
             is_dirty: false,
@@ -70,16 +54,37 @@ impl ConfigFile {
         std::fs::remove_file(self.path.clone())
     }
 
+    pub fn resume_entry(&mut self, idx: usize) {
+        let mut entry = self.entries.remove(idx);
+        entry.end_time = None;
+        self.current.push(entry);
+    }
+
     pub fn end_active_entry(&mut self, idx: usize) {
         let removed = self.current.remove(idx);
         self.add_done_entry(removed);
     }
 
-    pub fn get(&self) -> &ConfigFileInner {
+    pub fn end_active_entries(&mut self, cb: Option<fn(&TimeEntry)>) {
+        for _ in 0..self.current.len() {
+            let removed = self.current.remove(0);
+            if let Some(cb) = cb {
+                cb(&removed);
+            }
+            self.add_done_entry(removed);
+        }
+    }
+
+    pub fn add_done_entry(&mut self, mut entry: TimeEntry) {
+        entry.end_time = Some(chrono::Local::now().to_string());
+        self.entries.push(entry);
+    }
+
+    pub fn inner(&self) -> &ConfigFileInner {
         &self.config
     }
 
-    pub fn get_mut(&mut self) -> &mut ConfigFileInner {
+    pub fn inner_mut(&mut self) -> &mut ConfigFileInner {
         self.is_dirty = true;
         &mut self.config
     }
@@ -89,30 +94,14 @@ impl Deref for ConfigFile {
     type Target = ConfigFileInner;
 
     fn deref(&self) -> &Self::Target {
-        self.get()
+        self.inner()
     }
 }
 
 impl DerefMut for ConfigFile {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.get_mut()
+        self.inner_mut()
     }
-}
-
-fn read_file_to_vec(file: &mut File) -> Vec<u8> {
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf).unwrap();
-
-    buf
-}
-
-fn get_file(path: &PathBuf) -> std::fs::File {
-    std::fs::File::options()
-        .write(true)
-        .read(true)
-        .create(true)
-        .open(path)
-        .unwrap()
 }
 
 fn get_config_file(path: &PathBuf) -> (ConfigFileInner, std::fs::File) {
@@ -139,36 +128,8 @@ fn get_config_file(path: &PathBuf) -> (ConfigFileInner, std::fs::File) {
     (inner_config, config_file)
 }
 
-fn get_user_data(path: &PathBuf) -> UserData {
-    let mut user_data_file = if path.exists() {
-        get_file(path)
-    } else {
-        create_dir_all(path.parent().unwrap()).unwrap();
-        get_file(path)
-    };
-
-    let file_content = read_file_to_vec(&mut user_data_file);
-    
-    if file_content.is_empty() { return UserData::default();  }
-
-    rkyv::check_archived_root::<UserData>(file_content.as_slice())
-        .unwrap()
-        .deserialize(&mut rkyv::Infallible)
-        .unwrap()
-}
-
 pub fn get_config_file_path() -> PathBuf {
     let home_dir_path = std::env::var("HOME").unwrap();
 
-    PathBuf::from(home_dir_path)
-        .join(".tempo")
-        .join("config")
-}
-
-pub fn get_user_data_path() -> PathBuf {
-    let home_dir_path = std::env::var("HOME").unwrap();
-
-    PathBuf::from(home_dir_path)
-        .join(".tempo")
-        .join("user_data")
+    PathBuf::from(home_dir_path).join(".tempo").join("config")
 }

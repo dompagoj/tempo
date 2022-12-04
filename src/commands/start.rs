@@ -11,7 +11,7 @@ pub struct StartCommand {
 pub fn command(config: ConfigRef, args: StartCommand) {
     let arg_ticket_name = args.ticket_name.trim().to_owned();
 
-    if let Some(_) = config
+    if let Some(entry) = config
         .current
         .iter()
         .find(|entry| entry.ticket_name == arg_ticket_name)
@@ -19,9 +19,39 @@ pub fn command(config: ConfigRef, args: StartCommand) {
         println!(
             "{} {}",
             "Already tracking".bright_green(),
-            args.ticket_name.bright_green(),
+            entry.ticket_name.bright_green(),
         );
 
+        return;
+    }
+
+    if let Some((idx, entry)) = config
+        .entries
+        .iter()
+        .enumerate()
+        .find(|(_, entry)| entry.ticket_name == arg_ticket_name)
+    {
+        println!(
+            "{} {}",
+            "You already tracked and ended this ticket".yellow(),
+            args.ticket_name.bright_yellow(),
+        );
+
+        let result = inquire::Confirm::new(
+            format!(
+                "You already tracked and finished ticket {}, \n Do you want to resume it?",
+                entry.ticket_name
+            )
+            .as_str(),
+        )
+        .prompt()
+        .unwrap_or_default();
+
+        if !result {
+            return;
+        }
+        
+        config.resume_entry(idx);
         return;
     }
 

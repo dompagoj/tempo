@@ -1,13 +1,12 @@
-mod config;
+mod data;
 mod commands;
 mod id;
 
 use commands::Tempo;
-use config::ConfigFile;
 
 fn main() {
     let args = Tempo::parse_wrap();
-    let mut config = ConfigFile::get_new();
+    let mut config = data::ConfigFile::get_new();
     
     args.run(&mut config);
 

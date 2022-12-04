@@ -17,28 +17,32 @@ pub fn command(config: ConfigRef, args: EndCommand) {
 
     if config.current.len() == 1 {
         let first = config.current.first().unwrap();
-        println!(
-            "{}",
-            format!("Ended ticket {}", first.ticket_name.bright_green()).green()
-        );
+        print_end_msg(first);
         config.end_active_entry(0);
 
         return;
     }
 
     if args.force {
-        dbg!(&config.current);
-        dbg!(config.current.len());
-        for i in 0..config.current.len() {
-            println!(
-                "{}",
-                format!(
-                    "Ending ticket {}",
-                    config.current.get(0).unwrap().ticket_name.bright_green()
-                )
-                .green()
-            );
-            config.end_active_entry(0);
+        config.end_active_entries(Some(print_end_msg));
+
+        return;
+    }
+
+    if let Some(name) = args.ticket_name {
+        let found = config
+            .current
+            .iter()
+            .position(|e| e.ticket_name == name.trim());
+
+        match found {
+            Some(idx) => {
+                print_end_msg(config.current.get(idx).unwrap());
+                config.end_active_entry(idx);
+            }
+            None => {
+                println!("{} {}", "No tickets with name".red(), name.bright_red());
+            }
         }
 
         return;
@@ -68,23 +72,8 @@ pub fn command(config: ConfigRef, args: EndCommand) {
 
         config.end_active_entry(idx);
     }
+}
 
-    if let Some(name) = args.ticket_name {
-        let found = config
-            .current
-            .iter()
-            .position(|e| e.ticket_name == name.trim());
-
-        match found {
-            Some(idx) => {
-                config.end_active_entry(idx);
-                println!("{} {}", "Ended ticket".green(), name.bright_green());
-            }
-            None => {
-                println!("{} {}", "No tickets with name".red(), name.bright_red());
-            }
-        }
-
-        return;
-    }
+fn print_end_msg(entry: &TimeEntry) {
+    println!("{} {}", "Ended ticket".green(), entry.ticket_name.bright_green());
 }
