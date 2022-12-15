@@ -30,7 +30,7 @@ impl ConfigFile {
     pub fn get_new() -> Self {
         let path = get_config_file_path();
         let (config, config_file) = get_config_file(&path);
-        let user_data = UserData::default();
+        let user_data = UserData::new();
 
         ConfigFile {
             is_dirty: false,
@@ -42,12 +42,11 @@ impl ConfigFile {
     }
 
     pub fn save(&mut self) {
-        if !self.is_dirty {
-            return;
+        if self.is_dirty {
+            let data = rkyv::to_bytes::<_, 0>(&self.config).unwrap();
+            self.file.write_all(data.as_slice()).unwrap();
         }
-
-        let data = rkyv::to_bytes::<_, 0>(&self.config).unwrap();
-        self.file.write_all(data.as_slice()).unwrap();
+        self.user_data.save();
     }
 
     pub fn delete_file(&self) -> Result<(), std::io::Error> {

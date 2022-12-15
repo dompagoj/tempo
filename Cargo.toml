@@ -17,3 +17,4 @@ rkyv = {version = "0.7.39", features = ["validation"]}
 serde = {version="1.0.148", features= ["derive"]}
 serde_json = "1.0.89"
 rand = "0.8.5"
+paste = "1.0.9"

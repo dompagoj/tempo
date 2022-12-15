@@ -4,6 +4,8 @@ mod ls_command;
 mod start;
 mod rm_cmd;
 mod status;
+mod publish;
+mod configure;
 
 use crate::data::*;
 use clap::{command, Args, Parser, Subcommand};
@@ -28,6 +30,8 @@ pub enum Tempo {
     Ls(ls_command::LsCommand),
     Rm(rm_cmd::RmCommand),
     Status,
+    Publish,
+    Configure(configure::ConfigureCommand),
 }
 
 impl Tempo {
@@ -44,6 +48,9 @@ impl Tempo {
             Tempo::Ls(args) => ls_command::command(config, args),
             Tempo::Rm(args) => rm_cmd::command(config, args),
             Tempo::Status => status::command(config),
+            Tempo::Publish => publish::command(config),
+            Tempo::Configure(args) => configure::command(config, args),
         }
+        println!();
     }
 }
