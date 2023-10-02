@@ -1,18 +1,13 @@
-mod debug_config;
-mod end;
-mod ls_command;
-mod start;
-mod rm_cmd;
-mod status;
-mod publish;
 mod configure;
+mod debug_config;
+mod publish;
+mod repo;
 
 use crate::data::*;
 use clap::{command, Args, Parser, Subcommand};
 use colored::Colorize;
 
-pub type DateTime = chrono::DateTime<chrono::Local>;
-type ConfigRef<'a> = &'a mut ConfigFile;
+type Cfg<'a> = &'a mut ConfigFile;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -20,37 +15,56 @@ type ConfigRef<'a> = &'a mut ConfigFile;
     name = "Tempo",
     subcommand_required = true,
     bin_name = "tempo",
-    about = "Terminal app to track time in tempo"
+    about = "Terminal app to log time in jira"
 )]
-
 pub enum Tempo {
-    Start(start::StartCommand),
-    End(end::EndCommand),
     Debug(debug_config::DebugCommand),
-    Ls(ls_command::LsCommand),
-    Rm(rm_cmd::RmCommand),
-    Status,
-    Publish,
+    Publish(publish::PublishCommand),
     Configure(configure::ConfigureCommand),
+    Repo(repo::RepoCommand),
 }
 
-impl Tempo {
-    pub fn parse_wrap() -> Tempo {
-        Tempo::parse()
-    }
+macro_rules! bail_ok {
+    () => {
+        return Ok(())
+    };
+    ($msg: tt) => {
+        println!("{}", $msg.green());
+        return Ok(());
+    };
 
-    pub fn run(self, config: ConfigRef) {
+    ($format: tt, $($str: expr),+) => {
+        println!($format, $($str),+);
+        return Ok(());
+    };
+    ($format: tt, $($str: tt),+) => {
+        println!($format, $($str),+);
+        return Ok(());
+    };
+
+}
+
+pub(crate) use bail_ok;
+
+impl Tempo {
+    pub fn parse_wrap() -> Self { Tempo::parse() }
+
+    pub fn run(self, config: Cfg) {
         println!();
-        match self {
-            Tempo::Start(args) => start::command(config, args),
-            Tempo::End(args) => end::command(config, args),
+        let res = match self {
             Tempo::Debug(args) => debug_config::command(config, args),
-            Tempo::Ls(args) => ls_command::command(config, args),
-            Tempo::Rm(args) => rm_cmd::command(config, args),
-            Tempo::Status => status::command(config),
-            Tempo::Publish => publish::command(config),
+            Tempo::Publish(args) => publish::command(config, args),
             Tempo::Configure(args) => configure::command(config, args),
+            Tempo::Repo(args) => repo::command(config, args.action),
+        };
+
+        match res {
+            Ok(_) => {
+                println!();
+            }
+            Err(err) => {
+                println!("{}: {}", "Err".bright_red(), err.root_cause().to_string().bright_red());
+            }
         }
-        println!();
     }
 }

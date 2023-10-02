@@ -1,13 +1,18 @@
-mod data;
+#![allow(clippy::needless_return)]
+
+extern crate core;
+
 mod commands;
-mod id;
+mod data;
+mod git_helpers;
+mod jira;
 
 use commands::Tempo;
 
 fn main() {
     let args = Tempo::parse_wrap();
-    let mut config = data::ConfigFile::get_new();
-    
+    let mut config = data::ConfigFile::new();
+
     args.run(&mut config);
 
     config.save();
