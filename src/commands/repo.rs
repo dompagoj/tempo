@@ -1,8 +1,10 @@
+use crate::pretty_print;
+
 use super::*;
 use std::path::PathBuf;
 
 #[derive(Args, Debug)]
-#[command(about = "Manage tracket git repos")]
+#[command(about = "Manage tracked git repos")]
 pub struct RepoCommand {
     #[command(subcommand)]
     pub action: RepoCommandAction,
@@ -10,8 +12,11 @@ pub struct RepoCommand {
 
 #[derive(Subcommand, Debug)]
 pub enum RepoCommandAction {
+    #[command(about = "Add a repository")]
     Add { path: PathBuf },
+    #[command(about = "Delete a repository")]
     Rm,
+    #[command(about = "List all repositories")]
     Ls,
 }
 #[derive(Args, Debug)]
@@ -43,7 +48,7 @@ pub fn command(config: Cfg, args: RepoCommandAction) -> anyhow::Result<()> {
         RepoCommandAction::Ls => {
             println!("Existing repos: ");
             for (idx, path) in config.repos.inner().list.iter().enumerate() {
-                println!("  {}. --> {}", idx + 1, path.to_str().unwrap().bright_green());
+                pretty_print::print_row(idx, path.to_str().unwrap());
             }
         }
         RepoCommandAction::Rm => {

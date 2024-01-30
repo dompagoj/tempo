@@ -1,3 +1,5 @@
+use crate::pretty_print;
+
 use super::*;
 
 #[derive(Args, Debug)]
@@ -101,7 +103,10 @@ fn handle_alias(cfg: Cfg, args: UserAliasArgs) -> anyhow::Result<()> {
             );
         }
         UserAliasArgs::Ls => {
-            println!("LS");
+            let aliases = cfg.user_data.get_user_aliases();
+            for (idx, alias) in aliases.iter().enumerate() {
+                pretty_print::print_row(idx, alias);
+            }
         }
     };
 

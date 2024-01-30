@@ -16,6 +16,7 @@ macro_rules! add_getters {
         impl $name {
             $(
                 paste! {
+                    #[allow(unused)]
                     pub fn [<get_ $fname>](&self) -> &$ftype{
                         match self.$fname {
                             Some(ref itm) => itm,
@@ -27,6 +28,7 @@ macro_rules! add_getters {
                         }
                     }
 
+                    #[allow(unused)]
                      pub fn [<set_ $fname>](&mut self, val: $ftype) {
                         self.is_dirty = true;
                         self.$fname = Some(val);
@@ -46,24 +48,19 @@ struct UserData {
 }
 }
 
-impl OnDataInit for UserData
-{
-    fn on_init(&mut self)
-    {
+impl OnDataInit for UserData {
+    fn on_init(&mut self) {
         if self.user_aliases.is_none() {
             self.user_aliases = Some(vec![]);
         }
     }
 }
-impl DirtyTracker for UserData
-{
-    fn is_dirty(&self) -> bool
-    {
+impl DirtyTracker for UserData {
+    fn is_dirty(&self) -> bool {
         self.is_dirty
     }
 
-    fn set_dirty(&mut self)
-    {
+    fn set_dirty(&mut self) {
         self.is_dirty = true
     }
 }

@@ -5,7 +5,10 @@ use super::*;
 pub struct DebugCommand {}
 
 pub fn command(config: Cfg, _args: DebugCommand) -> anyhow::Result<()> {
-    println!("{:#?}", config);
+    config.user_data.initialize();
+    config.repos.initialize();
+    println!("{:#?}", *config.user_data);
+    println!("{:#?}", *config.repos);
 
     Ok(())
 }

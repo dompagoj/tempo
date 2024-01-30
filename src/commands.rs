@@ -47,7 +47,9 @@ macro_rules! bail_ok {
 pub(crate) use bail_ok;
 
 impl Tempo {
-    pub fn parse_wrap() -> Self { Tempo::parse() }
+    pub fn parse_wrap() -> Self {
+        Tempo::parse()
+    }
 
     pub fn run(self, config: Cfg) {
         println!();
@@ -67,4 +69,11 @@ impl Tempo {
             }
         }
     }
+}
+
+pub fn last_day_of_month(year: i32, month: u32) -> chrono::NaiveDate {
+    let next_month = if month == 12 { 1 } else { month + 1 };
+    let next_year = if month == 12 { year + 1 } else { year };
+
+    return chrono::NaiveDate::from_ymd_opt(next_year, next_month, 1).unwrap() - chrono::Duration::days(1);
 }

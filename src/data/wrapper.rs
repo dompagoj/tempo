@@ -28,7 +28,9 @@ pub struct DataWrapper<T> {
 impl<T: Serialize + DeserializeOwned + Default + DirtyTracker + Debug + OnDataInit> std::ops::Deref for DataWrapper<T> {
     type Target = T;
 
-    fn deref(&self) -> &Self::Target { self.inner() }
+    fn deref(&self) -> &Self::Target {
+        self.inner()
+    }
 }
 
 impl<T: Serialize + DeserializeOwned + Default + DirtyTracker + Debug + OnDataInit> DataWrapper<T> {
@@ -39,7 +41,9 @@ impl<T: Serialize + DeserializeOwned + Default + DirtyTracker + Debug + OnDataIn
         }
     }
 
-    pub fn inner(&self) -> &T { self.inner.as_ref().unwrap() }
+    pub fn inner(&self) -> &T {
+        self.inner.as_ref().unwrap()
+    }
 
     pub fn inner_mut(&mut self) -> &mut T {
         let inner = self.inner.as_mut().unwrap();
@@ -101,5 +105,7 @@ impl<T: Serialize + DeserializeOwned + Default + DirtyTracker + Debug + OnDataIn
         std::fs::write(self.path.clone(), data.as_slice()).expect("Couldnt save user data file");
     }
 
-    pub fn delete(&mut self) { std::fs::remove_file(self.path.clone()).expect("Failed to delete file"); }
+    pub fn delete(&mut self) {
+        std::fs::remove_file(self.path.clone()).expect("Failed to delete file");
+    }
 }

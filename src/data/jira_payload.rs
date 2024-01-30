@@ -1,12 +1,14 @@
-use std::path::PathBuf;
+use std::{ops::Add, path::PathBuf};
 
-use chrono::{DateTime, Datelike, Duration, FixedOffset, Local, NaiveTime, TimeZone, Utc, Weekday};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, NaiveTime, TimeZone, Utc, Weekday};
 use git2::{BranchType, Commit, Repository, Sort};
+
+use crate::commands::last_day_of_month;
 
 const DAILY_STANDUP_ID: &str = "ART-1427";
 #[allow(unused)]
 const SPRINT_PLANNING_ID: &str = "ART-1427";
-const MAX_TIME: Option<NaiveTime> = NaiveTime::from_hms_opt(23, 59, 59);
+const PTO_ID: &str = "ART-1440";
 
 #[derive(Debug)]
 struct GitCommitOccurance {
@@ -15,23 +17,46 @@ struct GitCommitOccurance {
     started: DateTime<Local>,
 }
 
+#[derive(Debug)]
 struct GitCommitTimeEntry {
     occurance: GitCommitOccurance,
     remaining_time: Duration,
 }
 
 #[derive(Debug)]
+pub enum JiraTicketId {
+    Regular(String),
+    DailyStandup,
+    Pto,
+    Skipped,
+}
+
+impl JiraTicketId {
+    pub fn to_str(&self) -> &str {
+        match self {
+            Self::Pto => PTO_ID,
+            Self::DailyStandup => DAILY_STANDUP_ID,
+            Self::Regular(str) => str,
+            Self::Skipped => "NULL",
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct JiraTimeEntry {
-    ticket_id: String,
-    comment: String,
-    started: DateTime<Local>,
-    time_spent_seconds: i64,
+    pub ticket_id: JiraTicketId,
+    pub comment: String,
+    pub started: DateTime<Local>,
+    pub time_spent: Duration,
 }
 
 pub fn construct_jira_payload(
     aliases: &[String],
     repos: &[PathBuf],
     start_date: chrono::NaiveDateTime,
+    end_date: chrono::NaiveDateTime,
+    vacation_days: Vec<NaiveDate>,
+    skip_days: Vec<NaiveDate>,
     should_pull: bool,
 ) -> anyhow::Result<Vec<JiraTimeEntry>> {
     let opened_repos = repos
@@ -51,26 +76,19 @@ pub fn construct_jira_payload(
 
     let mut commits = Vec::new();
     for repo in opened_repos {
-        add_commits_from_repo(&mut commits, start_date, aliases, repo)?;
+        add_commits_from_repo(&mut commits, start_date, end_date, aliases, repo)?;
     }
     commits.sort_unstable_by_key(|c| c.started);
 
-    // dbg!(&commits);
+    let parsed = parse_ticket_map(commits, start_date.year(), start_date.month(), vacation_days, skip_days);
 
-    let parsed = parse_ticket_map(commits, start_date.year(), start_date.month());
-
-    dbg!(&parsed);
-
-    let sum = Duration::seconds(parsed.iter().map(|p| p.time_spent_seconds).sum());
-
-    dbg!(sum.num_hours());
-
-    return Ok(vec![]);
+    return Ok(parsed);
 }
 
 fn add_commits_from_repo(
     commits: &mut Vec<GitCommitOccurance>,
     start: chrono::NaiveDateTime,
+    end: chrono::NaiveDateTime,
     aliases: &[String],
     repo: Repository,
 ) -> anyhow::Result<()> {
@@ -92,8 +110,6 @@ fn add_commits_from_repo(
     let global_cfg = git2::Config::find_global()?;
     let cfg = git2::Config::open(global_cfg.as_path())?;
 
-    dbg!(repo.head().unwrap().shorthand().unwrap());
-
     let email_entry = cfg.get_entry("user.email")?;
     let email = email_entry
         .value()
@@ -104,13 +120,8 @@ fn add_commits_from_repo(
     rev.push(dev_branch.get().target().expect("Weird, branch has no target"))?;
     rev.set_sorting(Sort::TIME)?;
 
-    let end = last_day_of_month(start.year(), start.month()).and_time(MAX_TIME.unwrap());
-
-    for oid in rev {
-        if oid.is_err() {
-            continue;
-        }
-        let commit = repo.find_commit(oid.unwrap())?;
+    for oid in rev.filter_map(|item| item.ok()) {
+        let commit = repo.find_commit(oid)?;
         let timestamp_utc = chrono::DateTime::from_timestamp(commit.time().seconds(), 0).unwrap();
 
         let timestamp = DateTime::from(timestamp_utc);
@@ -121,7 +132,6 @@ fn add_commits_from_repo(
         }
 
         if timestamp_naive < start {
-            dbg!("Got to end");
             break;
         }
 
@@ -149,14 +159,13 @@ fn add_commits_from_repo(
     return Ok(());
 }
 
-fn last_day_of_month(year: i32, month: u32) -> chrono::NaiveDate {
-    let next_month = if month == 12 { 1 } else { month + 1 };
-    let next_year = if month == 12 { year + 1 } else { year };
-
-    return chrono::NaiveDate::from_ymd_opt(next_year, next_month, 1).unwrap() - Duration::days(1);
-}
-
-fn parse_ticket_map(commits: Vec<GitCommitOccurance>, year: i32, month: u32) -> Vec<JiraTimeEntry> {
+fn parse_ticket_map(
+    commits: Vec<GitCommitOccurance>,
+    year: i32,
+    month: u32,
+    vacation_days: Vec<NaiveDate>,
+    skip_days: Vec<NaiveDate>,
+) -> Vec<JiraTimeEntry> {
     let last_day = last_day_of_month(year, month);
     let mut res = vec![];
 
@@ -169,72 +178,94 @@ fn parse_ticket_map(commits: Vec<GitCommitOccurance>, year: i32, month: u32) -> 
     let total_required_duration = Duration::minutes((days.len() * 8 * 60) as i64);
     let each_ticket_duration = total_required_duration / commits.len() as i32;
 
-    dbg!(
-        days.len(),
-        total_required_duration.num_minutes(),
-        total_required_duration.num_hours(),
-        each_ticket_duration.num_hours(),
-        commits.len(),
-    );
+    res.reserve(days.len() + commits.len());
 
-    let mut commit_entries =
-        commits
-            .into_iter()
-            .map(|c| GitCommitTimeEntry {
-                occurance: c,
-                remaining_time: each_ticket_duration,
-            })
-            .peekable();
-
-    let max_per_day: Duration = Duration::hours(8);
+    let mut commit_entries = commits
+        .into_iter()
+        .map(|c| GitCommitTimeEntry {
+            occurance: c,
+            remaining_time: each_ticket_duration,
+        })
+        .peekable();
 
     let daily_standup_duration = Duration::minutes(30);
 
+    let mut total_logged = Duration::zero();
+
     for day in days.iter() {
-        let mut clocked_time = Duration::zero();
+        if skip_days.iter().any(|d| *d == *day) {
+            let skip_day_date = Utc
+                .from_utc_datetime(&day.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()))
+                .with_timezone(&Local);
+
+            res.push(JiraTimeEntry {
+                ticket_id: JiraTicketId::Skipped,
+                started: skip_day_date,
+                comment: String::from("empty"),
+                time_spent: Duration::zero(),
+            });
+
+            continue;
+        }
+
+        if vacation_days.iter().any(|d| *d == *day) {
+            let vacation_date_utc = Utc
+                .from_utc_datetime(&day.and_time(NaiveTime::from_hms_opt(9, 0, 0).unwrap()))
+                .with_timezone(&Local);
+
+            res.push(JiraTimeEntry {
+                ticket_id: JiraTicketId::Pto,
+                comment: "(Auto generated) PTO".to_string(),
+                started: vacation_date_utc,
+                time_spent: Duration::hours(8),
+            });
+
+            continue;
+        }
+
         let daily_date_utc = Utc
             .from_utc_datetime(&day.and_time(NaiveTime::from_hms_opt(15, 0, 0).unwrap()))
             .with_timezone(&Local);
 
         res.push(JiraTimeEntry {
-            ticket_id: DAILY_STANDUP_ID.to_string(),
-            time_spent_seconds: daily_standup_duration.num_seconds(),
+            ticket_id: JiraTicketId::DailyStandup,
+            time_spent: daily_standup_duration,
             comment: "(Auto generated) Daily standup".to_string(),
             started: daily_date_utc,
         });
-        clocked_time = clocked_time + daily_standup_duration;
+        total_logged = total_logged + daily_standup_duration;
 
-        match commit_entries.peek_mut() {
-            Some(commit) => {
-                while commit.remaining_time > Duration::zero() {
-                    // commit.remaining_time.max(max_per_day);
+        if total_logged >= total_required_duration {
+            continue;
+        }
 
-                    res.push(JiraTimeEntry {
-                        ticket_id: commit.occurance.ticket_id.clone(),
-                        time_spent_seconds: each_ticket_duration.num_seconds(),
-                        comment: "(Auto generated) Daily standup".to_string(),
-                        started: daily_date_utc,
-                    });
+        let next_commit = commit_entries.peek_mut();
+
+        let next_commit = match next_commit {
+            Some(c) => {
+                if c.remaining_time > Duration::zero() {
+                    c
+                } else {
+                    commit_entries.next();
+                    let next = commit_entries.peek_mut();
+                    match next {
+                        Some(c) => c,
+                        None => continue,
+                    }
                 }
             }
-            None => break,
+            None => continue,
         };
 
-        // while let Some(val) = commits_iter.peek_mut() {
-        //     res.push(JiraTimeEntry {
-        //         ticket_id: val.ticket_id.clone(),
-        //         time_spent_seconds: ticket_duration.num_seconds(),
-        //         comment: format!("(Auto generated) {}", val.comment),
-        //         started: daily_date_utc + clocked_time,
-        //     });
-        //     dbg!("Logged for ticket: {}", ticket_duration.num_hours());
-        //     clocked_time = clocked_time + ticket_duration;
-        //
-        //     commits_iter.next();
-        //     if clocked_time >= max_per_day {
-        //         break;
-        //     }
-        // }
+        let spent = Duration::hours(7).add(Duration::minutes(30));
+        res.push(JiraTimeEntry {
+            ticket_id: JiraTicketId::Regular(next_commit.occurance.ticket_id.clone()),
+            time_spent: spent,
+            comment: format!("(Auto generated) {}", next_commit.occurance.comment),
+            started: daily_date_utc + Duration::minutes(30),
+        });
+        next_commit.remaining_time = next_commit.remaining_time - spent;
+        total_logged = total_logged + spent;
     }
 
     res

@@ -6,6 +6,7 @@ mod commands;
 mod data;
 mod git_helpers;
 mod jira;
+mod pretty_print;
 
 use commands::Tempo;
 
