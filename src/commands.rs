@@ -1,5 +1,6 @@
 mod configure;
 mod debug_config;
+mod delete;
 mod publish;
 mod repo;
 
@@ -20,6 +21,7 @@ type Cfg<'a> = &'a mut ConfigFile;
 pub enum Tempo {
     Debug(debug_config::DebugCommand),
     Publish(publish::PublishCommand),
+    Delete(delete::DeleteCommand),
     Configure(configure::ConfigureCommand),
     Repo(repo::RepoCommand),
 }
@@ -44,7 +46,17 @@ macro_rules! bail_ok {
 
 }
 
+macro_rules! unwrap_or_continue {
+    ($option: expr) => {
+        match $option {
+            Some(val) => val,
+            None => continue,
+        }
+    };
+}
+
 pub(crate) use bail_ok;
+pub(crate) use unwrap_or_continue;
 
 impl Tempo {
     pub fn parse_wrap() -> Self {
@@ -58,6 +70,7 @@ impl Tempo {
             Tempo::Publish(args) => publish::command(config, args),
             Tempo::Configure(args) => configure::command(config, args),
             Tempo::Repo(args) => repo::command(config, args.action),
+            Tempo::Delete(args) => delete::command(config, args),
         };
 
         match res {
@@ -69,11 +82,4 @@ impl Tempo {
             }
         }
     }
-}
-
-pub fn last_day_of_month(year: i32, month: u32) -> chrono::NaiveDate {
-    let next_month = if month == 12 { 1 } else { month + 1 };
-    let next_year = if month == 12 { year + 1 } else { year };
-
-    return chrono::NaiveDate::from_ymd_opt(next_year, next_month, 1).unwrap() - chrono::Duration::days(1);
 }

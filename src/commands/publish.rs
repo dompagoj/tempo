@@ -1,82 +1,26 @@
-use crate::jira;
+use crate::{jira, pretty_print, step::Step, time};
 
 use super::*;
 use anyhow::bail;
-use chrono::{Datelike, Duration, Local, NaiveDate, NaiveTime};
-use core::fmt;
-use indicatif::{ProgressBar, ProgressStyle};
-use std::fmt::Formatter;
-
-const MAX_TIME: Option<NaiveTime> = NaiveTime::from_hms_opt(23, 59, 59);
-
-#[derive(Debug, Clone)]
-struct MonthDisplay {
-    month: u32,
-    name: &'static str,
-}
+use chrono::Duration;
 
 #[derive(Args, Debug)]
-#[command(about = "Print the config file")]
+#[command(about = "Publish hours to jira time tracking")]
 pub struct PublishCommand {
     #[arg(short = 's', long)]
     skip_pull: bool,
 }
 
-impl fmt::Display for MonthDisplay {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.month, self.name)
-    }
-}
-
-struct Step {
-    pos: u32,
-    len: u32,
-}
-
-impl Step {
-    fn new(len: u32) -> Self {
-        Self { pos: 1, len }
-    }
-
-    fn get_pos(&self) -> u32 {
-        self.pos
-    }
-
-    fn inc_pos(&mut self) {
-        self.pos += 1;
-    }
-
-    fn get_str(&mut self) -> String {
-        assert!(self.get_pos() <= self.len);
-        let str = format!("[{}/{}]", self.get_pos(), self.len);
-        self.inc_pos();
-
-        return str;
-    }
-}
-
 pub fn command(config: Cfg, args: PublishCommand) -> anyhow::Result<()> {
-    let now = Local::now();
-    let starting_cursor = if now.month() <= 2 { 0 } else { now.month() as usize - 2 };
+    let (start_date, end_date) = time::get_date_range_from_user()?;
 
-    let selected_year = inquire::Select::new("Select year", get_years(now.year())).prompt()?;
-    let selected_month = inquire::Select::new("Select month", get_months())
-        .with_starting_cursor(starting_cursor)
-        .prompt()?;
-
-    let start_date = chrono::NaiveDate::from_ymd_opt(selected_year, selected_month.month, 1)
-        .ok_or(anyhow::anyhow!("Failed to parse date"))?
-        .and_time(NaiveTime::MIN);
-
-    let end_date = last_day_of_month(start_date.year(), start_date.month()).and_time(MAX_TIME.unwrap());
-
-    let vacation_days = get_day_range(
+    let vacation_days = time::get_day_range(
         "Did you have any vacation days?",
         "Pick vacation day",
         start_date.date(),
         end_date.date(),
     )?;
-    let skip_days = get_day_range(
+    let skip_days = time::get_day_range(
         "Do you want to skip any days?",
         "Pick skip day",
         start_date.date(),
@@ -90,7 +34,7 @@ pub fn command(config: Cfg, args: PublishCommand) -> anyhow::Result<()> {
 
     println!("{} Parsing commits...", step.get_str().bold());
     let jira_payload = construct_jira_payload(
-        user_data.user_aliases.as_ref().unwrap_or(&vec![]),
+        user_data.get_user_aliases(),
         repos,
         start_date,
         end_date,
@@ -133,14 +77,8 @@ pub fn command(config: Cfg, args: PublishCommand) -> anyhow::Result<()> {
         bail!("Canceled");
     }
 
-    let pb = ProgressBar::new(jira_payload.len() as u64);
-    let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {bar} {pos}/{len}")
-        .unwrap()
-        .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
-    pb.set_style(spinner_style);
-
+    let pb = pretty_print::get_progress_bar(jira_payload.len() as u64);
     println!("{} Publishing to jira...", step.get_str().bold());
-    pb.set_position(0);
 
     let mut published_hours = Duration::zero();
 
@@ -177,96 +115,4 @@ pub fn command(config: Cfg, args: PublishCommand) -> anyhow::Result<()> {
     );
 
     Ok(())
-}
-
-fn get_years(curr: i32) -> Vec<i32> {
-    let mut res = vec![];
-    for i in ((curr - 1)..curr + 1).rev() {
-        res.push(i);
-    }
-
-    return res;
-}
-
-fn get_day_range(
-    msg: &str,
-    picker_msg: &str,
-    min_date: NaiveDate,
-    max_date: NaiveDate,
-) -> anyhow::Result<Vec<NaiveDate>> {
-    let mut buf = vec![];
-
-    if inquire::Confirm::new(msg).prompt()? {
-        let mut done = false;
-
-        while !done {
-            let res = inquire::DateSelect::new(picker_msg)
-                .with_min_date(min_date)
-                .with_max_date(max_date)
-                .prompt()?;
-
-            if buf.iter().any(|d| *d == res) {
-                println!("{}", "Already added".red());
-            } else {
-                buf.push(res);
-            }
-
-            done = !inquire::Confirm::new("Add more?").prompt()?;
-        }
-    }
-
-    return Ok(buf);
-}
-
-fn get_months() -> Vec<MonthDisplay> {
-    vec![
-        MonthDisplay {
-            month: 1,
-            name: chrono::Month::January.name(),
-        },
-        MonthDisplay {
-            month: 2,
-            name: chrono::Month::February.name(),
-        },
-        MonthDisplay {
-            month: 3,
-            name: chrono::Month::March.name(),
-        },
-        MonthDisplay {
-            month: 4,
-            name: chrono::Month::April.name(),
-        },
-        MonthDisplay {
-            month: 5,
-            name: chrono::Month::May.name(),
-        },
-        MonthDisplay {
-            month: 6,
-            name: chrono::Month::June.name(),
-        },
-        MonthDisplay {
-            month: 7,
-            name: chrono::Month::July.name(),
-        },
-        MonthDisplay {
-            month: 8,
-            name: chrono::Month::August.name(),
-        },
-        MonthDisplay {
-            month: 9,
-            name: chrono::Month::September.name(),
-        },
-        MonthDisplay {
-            month: 10,
-            name: chrono::Month::October.name(),
-        },
-        MonthDisplay {
-            month: 11,
-            name: chrono::Month::November.name(),
-        },
-        MonthDisplay {
-            month: 12,
-            name: chrono::Month::December.name(),
-        },
-    ]
 }

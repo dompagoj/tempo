@@ -1,19 +1,17 @@
-use std::{ops::Add, path::PathBuf};
-
+use crate::{commands::unwrap_or_continue, time};
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, NaiveTime, TimeZone, Utc, Weekday};
 use git2::{BranchType, Commit, Repository, Sort};
+use std::{ops::Add, path::PathBuf};
 
-use crate::commands::last_day_of_month;
-
-const DAILY_STANDUP_ID: &str = "ART-1427";
+const DAILY_STANDUP_ID: &str = "ART-1777";
 #[allow(unused)]
-const SPRINT_PLANNING_ID: &str = "ART-1427";
-const PTO_ID: &str = "ART-1440";
+const SPRINT_PLANNING_ID: &str = "ART-1778";
+const PTO_ID: &str = "ART-1790";
 
 #[derive(Debug)]
 struct GitCommitOccurance {
     ticket_id: String,
-    comment: String,
+    comments: Vec<String>,
     started: DateTime<Local>,
 }
 
@@ -143,17 +141,24 @@ fn add_commits_from_repo(
             continue;
         }
 
-        let msg_ref = commit.message().unwrap();
-        let semi_idx = match msg_ref.find(':') {
-            Some(v) => v,
-            None => continue,
-        };
+        let msg_ref = unwrap_or_continue!(commit.message());
+        let semi_idx = unwrap_or_continue!(msg_ref.find(':'));
 
-        commits.push(GitCommitOccurance {
-            started: timestamp,
-            comment: msg_ref[(semi_idx + 1)..].trim().to_string(),
-            ticket_id: msg_ref[..semi_idx].trim().to_string(),
-        });
+        let ticket_id = msg_ref[..semi_idx].trim().to_string();
+        let comment = msg_ref[(semi_idx + 1)..].trim().to_string();
+
+        match commits.iter_mut().find(|item| item.ticket_id == ticket_id) {
+            Some(val) => {
+                val.comments.push(comment);
+            }
+            None => {
+                commits.push(GitCommitOccurance {
+                    started: timestamp,
+                    ticket_id,
+                    comments: vec![comment],
+                });
+            }
+        }
     }
 
     return Ok(());
@@ -166,7 +171,7 @@ fn parse_ticket_map(
     vacation_days: Vec<NaiveDate>,
     skip_days: Vec<NaiveDate>,
 ) -> Vec<JiraTimeEntry> {
-    let last_day = last_day_of_month(year, month);
+    let last_day = time::last_day_of_month(year, month);
     let mut res = vec![];
 
     let days = (0..last_day.day())
@@ -194,13 +199,9 @@ fn parse_ticket_map(
 
     for day in days.iter() {
         if skip_days.iter().any(|d| *d == *day) {
-            let skip_day_date = Utc
-                .from_utc_datetime(&day.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()))
-                .with_timezone(&Local);
-
             res.push(JiraTimeEntry {
                 ticket_id: JiraTicketId::Skipped,
-                started: skip_day_date,
+                started: Local::now(),
                 comment: String::from("empty"),
                 time_spent: Duration::zero(),
             });
@@ -239,16 +240,13 @@ fn parse_ticket_map(
             continue;
         }
 
-        let next_commit = commit_entries.peek_mut();
-
-        let next_commit = match next_commit {
+        let next_commit = match commit_entries.peek_mut() {
             Some(c) => {
                 if c.remaining_time > Duration::zero() {
                     c
                 } else {
                     commit_entries.next();
-                    let next = commit_entries.peek_mut();
-                    match next {
+                    match commit_entries.peek_mut() {
                         Some(c) => c,
                         None => continue,
                     }
@@ -261,7 +259,7 @@ fn parse_ticket_map(
         res.push(JiraTimeEntry {
             ticket_id: JiraTicketId::Regular(next_commit.occurance.ticket_id.clone()),
             time_spent: spent,
-            comment: format!("(Auto generated) {}", next_commit.occurance.comment),
+            comment: format!("(Auto generated) \n{}", next_commit.occurance.comments.join("\n")),
             started: daily_date_utc + Duration::minutes(30),
         });
         next_commit.remaining_time = next_commit.remaining_time - spent;
