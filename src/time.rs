@@ -32,7 +32,7 @@ pub fn get_date_range_from_user() -> anyhow::Result<(NaiveDateTime, NaiveDateTim
 
     let end_date = last_day_of_month(start_date.year(), start_date.month()).and_time(MAX_TIME.unwrap());
 
-    return Ok((start_date, end_date));
+    Ok((start_date, end_date))
 }
 
 pub fn get_years(curr: i32) -> Vec<i32> {
@@ -56,7 +56,9 @@ pub fn get_day_range(
         let mut done = false;
 
         while !done {
+            dbg!(min_date, max_date);
             let res = inquire::DateSelect::new(picker_msg)
+                .with_default(min_date)
                 .with_min_date(min_date)
                 .with_max_date(max_date)
                 .prompt()?;
@@ -71,7 +73,7 @@ pub fn get_day_range(
         }
     }
 
-    return Ok(buf);
+    Ok(buf)
 }
 
 pub fn get_months() -> Vec<MonthDisplay> {

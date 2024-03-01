@@ -18,7 +18,7 @@ impl Step {
 
     pub fn get_str(&mut self) -> String {
         assert!(self.get_pos() <= self.len);
-        let str = format!("[{}/{}]", self.get_pos(), self.len);
+        let str = format!("[{}/{}]", self.pos, self.len);
         self.inc_pos();
 
         return str;
